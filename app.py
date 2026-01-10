@@ -27,7 +27,7 @@ except Exception:
     st.error("⚠️ Falta la API Key en la configuración.")
     st.stop()
 
-modelo_seleccionado = "models/gemma-3-1b-it"
+modelo_seleccionado = "models/gemma-3-27b-it"
 
 # --- 4. FUNCIONES DE EXPORTACIÓN ---
 
