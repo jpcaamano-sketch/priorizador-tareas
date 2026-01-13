@@ -1,63 +1,122 @@
 import streamlit as st
+import json
+import google.generativeai as genai
+import os
 
-# --- LÓGICA DE PRIORIZACIÓN (Eisenhower) ---
-# NOTA: No incluimos 'st.set_page_config' ni estilos CSS aquí, 
-# porque el archivo 'Inicio.py' ya se encarga de todo eso.
+# --- 1. CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(page_title="Priorizador Eisenhower", page_icon="🛡️", layout="wide")
 
-st.header("⚖️ Priorizador de Tareas (Matriz de Eisenhower)")
-st.markdown("**Herramienta para decidir qué tareas hacer ahora y cuáles planificar o eliminar.**")
+# CSS para ocultar elementos innecesarios y limpiar la interfaz
+st.markdown("""
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 2. CONEXIÓN SEGURA (CLOUD & LOCAL) ---
+try:
+    # Intenta leer la clave desde los secretos de Streamlit (secrets.toml o Cloud)
+    api_key = st.secrets["GOOGLE_API_KEY"]
+    genai.configure(api_key=api_key)
+except Exception:
+    st.error("⚠️ Error de Seguridad: No se encontró la API KEY.")
+    st.info("Nota: Si estás en local, asegura que exista .streamlit/secrets.toml. Si estás en la nube, configúrala en los 'Secrets' del dashboard.")
+    st.stop()
+
+# --- 3. INTERFAZ DE USUARIO ---
+st.title("🛡️ Priorizador de Eisenhower")
+st.caption("Organización inteligente de tareas basada en tu rol profesional.")
+
 st.divider()
 
-# --- 1. INGRESAR TAREA ---
-col1, col2 = st.columns([2, 1])
+# Input del ROL (Movido arriba de la lista como pediste)
+user_role = st.text_input(
+    "👤 ¿Cuál es tu rol o cargo?", 
+    value="Profesional ocupado",
+    placeholder="Ej: Gerente de Ventas, Abogado, Dueña de casa..."
+)
 
-with col1:
-    tarea = st.text_input("📝 Describe la tarea:", placeholder="Ej: Responder correo urgente del cliente...")
+# Input de TAREAS
+st.subheader("📝 Tu lista de pendientes")
+tasks_input = st.text_area(
+    "Escribe tus tareas aquí (una por línea):",
+    height=150,
+    placeholder="Revisar contrato del cliente X\nComprar cartulina para el hijo\nLlamar al contador..."
+)
 
-with col2:
-    st.write("**Evaluación:**")
-    c_imp, c_urg = st.columns(2)
-    es_importante = c_imp.checkbox("¿Es Importante?", help="¿Te acerca a tus objetivos a largo plazo?")
-    es_urgente = c_urg.checkbox("¿Es Urgente?", help="¿Requiere atención inmediata o tiene fecha límite ya?")
+# --- 4. LÓGICA DE INTELIGENCIA ARTIFICIAL ---
+def analyze_tasks(tasks, role):
+    try:
+        # Usamos un modelo fijo y rápido (Flash) para que el usuario no tenga que elegir
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        
+        prompt = f"""
+        Actúa como un experto en productividad para un "{role}".
+        Clasifica estas tareas en la Matriz de Eisenhower.
+        
+        TAREAS:
+        {tasks}
+        
+        FORMATO JSON REQUERIDO (Estrictamente solo JSON):
+        {{
+            "hacer": ["tarea 1", "tarea 2"],
+            "planificar": ["tarea 3"],
+            "delegar": ["tarea 4"],
+            "eliminar": ["tarea 5"],
+            "recomendacion_top": "Un consejo breve de una frase sobre el foco de hoy"
+        }}
+        """
+        response = model.generate_content(prompt)
+        # Limpieza de la respuesta para asegurar JSON puro
+        clean_text = response.text.replace("```json", "").replace("```", "").strip()
+        return json.loads(clean_text)
 
-# --- 2. LOGICA DE DECISIÓN ---
-st.divider()
+    except Exception as e:
+        st.error(f"Error al procesar: {e}")
+        return None
 
-if not tarea:
-    st.info("👆 Ingresa una tarea arriba para ver qué debes hacer con ella.")
-
-else:
-    st.subheader("💡 Acción Recomendada")
-    
-    # Cuadrante 1: Importante + Urgente
-    if es_importante and es_urgente:
-        st.error("🔥 ¡HAZLO YA! (Cuadrante 1)")
-        st.markdown(f"La tarea **'{tarea}'** es una crisis o problema inminente.")
-        st.write("👉 **Consejo:** No lo pienses, ejecútalo ahora mismo para apagar el fuego.")
-
-    # Cuadrante 2: Importante + NO Urgente
-    elif es_importante and not es_urgente:
-        st.info("📅 PLANIFÍCALO (Cuadrante 2)")
-        st.markdown(f"La tarea **'{tarea}'** es estratégica para tu crecimiento.")
-        st.write("👉 **Consejo:** Ponle fecha y hora en tu calendario. Aquí es donde debes pasar la mayor parte de tu tiempo.")
-
-    # Cuadrante 3: NO Importante + Urgente
-    elif not es_importante and es_urgente:
-        st.warning("👥 DELÉGALO (Cuadrante 3)")
-        st.markdown(f"La tarea **'{tarea}'** es una interrupción disfrazada de trabajo.")
-        st.write("👉 **Consejo:** ¿Puede hacerlo alguien más? Si no tienes equipo, hazlo rápido para quitártelo de encima, pero no le dediques mucha energía.")
-
-    # Cuadrante 4: NO Importante + NO Urgente
+# --- 5. EJECUCIÓN ---
+if st.button("🚀 Priorizar Ahora", type="primary", use_container_width=True):
+    if not tasks_input:
+        st.warning("⚠️ La lista está vacía. Escribe algo para comenzar.")
     else:
-        st.success("🗑️ ELIMÍNALO (Cuadrante 4)")
-        st.markdown(f"La tarea **'{tarea}'** es probablemente una distracción.")
-        st.write("👉 **Consejo:** ¿Qué pasa si no lo haces? Si la respuesta es 'nada', bórralo de tu lista.")
+        with st.spinner("Analizando urgencia e importancia..."):
+            result = analyze_tasks(tasks_input, user_role)
+            
+            if result:
+                st.divider()
+                
+                # Fila superior
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.success("🔥 1. HACER YA (Urgente e Importante)")
+                    for t in result.get("hacer", []): st.write(f"• {t}")
+                    if not result.get("hacer"): st.write("*Nada por aquí*")
+                
+                with col2:
+                    st.info("📅 2. PLANIFICAR (No Urgente pero Importante)")
+                    for t in result.get("planificar", []): st.write(f"• {t}")
+                    if not result.get("planificar"): st.write("*Nada por aquí*")
 
-# --- 3. EXPLICACIÓN EDUCATIVA ---
-with st.expander("📚 Ver explicación detallada de los 4 Cuadrantes"):
-    st.markdown("""
-    * **Cuadrante 1 (Hacer):** Crisis, problemas acuciantes, proyectos con fecha límite hoy.
-    * **Cuadrante 2 (Planificar):** Prevención, construcción de relaciones, búsqueda de nuevas oportunidades, planificación. **(Es el cuadrante del Liderazgo).**
-    * **Cuadrante 3 (Delegar):** Interrupciones, algunas llamadas, correos, reuniones irrelevantes para ti pero urgentes para otros.
-    * **Cuadrante 4 (Eliminar):** Trivialidades, ajetreo inútil, ladrones de tiempo (redes sociales, correos spam).
-    """)
+                st.divider()
+
+                # Fila inferior
+                col3, col4 = st.columns(2)
+                with col3:
+                    st.warning("🤝 3. DELEGAR (Urgente pero No Importante)")
+                    for t in result.get("delegar", []): st.write(f"• {t}")
+                    if not result.get("delegar"): st.write("*Nada por aquí*")
+                
+                with col4:
+                    st.error("🗑️ 4. ELIMINAR (Ni Urgente ni Importante)")
+                    for t in result.get("eliminar", []): st.write(f"• {t}")
+                    if not result.get("eliminar"): st.write("*Nada por aquí*")
+                
+                # Consejo final
+                st.markdown(f"""
+                <div style="background-color:#f0f2f6;padding:15px;border-radius:10px;margin-top:20px;text-align:center;">
+                    <b>💡 Consejo del Coach:</b> {result.get('recomendacion_top', '')}
+                </div>
+                """, unsafe_allow_html=True)
